@@ -1,0 +1,353 @@
+---
+title: "Inequality in Education Around the World"
+author: "Olivia Jiang"
+date: "`r Sys.Date()`"
+output: html_document
+format: 
+  html:
+    html-table-processing: none
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
+```
+
+### Introduction
+
+This project examines the differences in educational development and opportunity around the world. The quality of education among a country's population is one of the most prominent indicators of the current wellbeing and future advancement of a country, yet it varies widely across different places and groups of people. I was curious about the extent of these differences, so I turned to the data to find out.
+
+I used data from the United Nations' Human Development Reports by the UN Development Program; I downloaded data from [UNDP's open database](https://hdr.undp.org/data-center/documentation-and-downloads) over 34 years: 1990 to 2023. Note that the variables that I was interested in were missing past 2023 so the past couple of years (2024 and 2025) aren't included in this analysis.
+
+The data contains information on countries' adult population, defined as people over 25 for the metrics I'm interested in, and specifically their average amount of education that they've obtained by then. There's also more variables providing breakdowns by demographics, such as the same metrics split by gender as well as indicators for/of the country's economic level of development in the form of the GNI (Gross National Income) of the residents. These provide background context on a country. TODO: There are also global metrics for each country equivalent.
+
+```{r include = FALSE}
+# Loading packages
+library(readxl)
+library(tidyverse)
+library(gghighlight)
+library(ggrepel)
+library(countrycode)
+library(gt)
+library(gtExtras)
+library(patchwork)
+library(scales)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# Preparing the data
+data <- read_excel("hdr-data.xlsx") %>%
+  select(-c(yearStr, indexCode, index, dimension, note)) %>%
+  mutate(year = as.numeric(year),
+         value = as.numeric(value),
+         actualValue = as.numeric(actualValue),
+         continent = countrycode(countryIsoCode,
+                                 origin = "iso3c",
+                                 destination = "continent"),
+         # NRO is for Naoero, a country in Oceania
+         # ZZK.WORLD means the global value
+         continent = ifelse(countryIsoCode == "NRO", "Oceania", continent))
+```
+
+### The global level of education over time
+
+In this initial plot of the average global amount of education in years, it's clear that the world is gradually becoming more educated.
+
+```{r echo=FALSE, fig.width=7, fig.height=5}
+# ____________________________________________________
+data %>%
+  filter(indicatorCode == "mys",
+         is.na(continent)) %>%
+  ggplot(aes(x = year, y = actualValue)) +
+  geom_line(linewidth = 1) +
+  scale_y_continuous(labels = ~ paste(.x, "Years")) +
+  labs(x = "",
+       y = "",
+       title = "The Average Amount of Education That Adults* Have (1990-2023)",
+       caption = "*People over 25") +
+  theme_classic() +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+        plot.title = element_text(size = 14))
+
+# Calculating the average change in MYS per year
+
+mys_1990 <- data %>%
+  filter(indicatorCode == "mys",
+         is.na(continent),
+         year == 1990) %>%
+  pull(actualValue)
+
+mys_2023 <- data %>%
+  filter(indicatorCode == "mys",
+         is.na(continent),
+         year == 2023) %>%
+  pull(actualValue)
+```
+
+The world's education level in general has been steadily increasing for the past 3 decades from ~`r round(mys_1990, 1)` years in 1990 to ~`r round(mys_1990, 1)` years in 2023 (a change of ~`r round(mys_2023 - mys_1990, 1)` years!), which is really nice to see. In fact, it has increased every single year, by ~`r round((mys_2023 - mys_1990) / (2023 - 1990), 1)` years each year.
+
+However, if we look into how the level of education varies demographically (specifically, between genders and economic classes) and geographically, some disparities emerge.
+
+### Social disparities
+
+In this plot, when the metric is split by gender, a gap emerges.
+
+```{r echo=FALSE, message=FALSE, fig.width=7, fig.height=5}
+# ____________________________________________________
+data %>%
+  filter(indicatorCode %in% c("mys_f", "mys_m"),
+         is.na(continent)) %>%
+  mutate(indicatorCode = recode(indicatorCode,
+                                "mys_f" = "Females",
+                                "mys_m" = "Males")) %>%
+  ggplot(aes(x = year, y = actualValue, color = indicatorCode)) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = c("Males" = "royalblue2",
+                                "Females" = "violetred1")) +
+  scale_y_continuous(labels = ~ paste(.x, "Years")) +
+  labs(x = "",
+       y = "",
+       title = "The Average Amount of Education That Adults Have (1990-2023)",
+       colour = "") +
+  guides(color = guide_legend(reverse = TRUE)) +
+  theme_classic() +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+        plot.title = element_text(size = 14),
+        legend.position = c(0.1, 0.9))
+
+# Calculating the average change in MYS per year
+# TODO
+```
+
+The average amount of education for females has never been more than for males. Although they've been increasing at very similar speeds - nearly parallel lines - there has always been a consistent gap of around one year between them. Nonetheless, over the past few years, beginning in 2020, that gap has been shrinking.
+
+```{r echo=FALSE}
+# Putting the yearly gaps in a table
+data %>%
+  filter(indicatorCode %in% c("mys_f", "mys_m"), is.na(continent)) %>%
+  group_by(year, indicatorCode) %>%
+  summarize(actualValue = mean(actualValue, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = indicatorCode, values_from = actualValue, values_fill = 0) %>%
+  mutate(gender_gap = round(mys_m - mys_f, 1)) %>%
+  filter(year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2020, 2023)) %>%
+  select(year, gender_gap) %>%
+  pivot_wider(names_from = year, values_from = gender_gap) %>%
+  gt()
+```
+
+Another way to look at the gender gap is through the percentage of adults in each gender who have at least some level of secondary education (TODO: how is this defined??). In other words, this is...
+
+```{r echo=FALSE, fig.width=7, fig.height=5}
+# ____________________________________________________
+data %>%
+  filter(indicatorCode %in% c("se_f", "se_m"),
+         is.na(continent)) %>% 
+  ggplot(aes(x = year, y = actualValue, fill = indicatorCode)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("se_m" = "royalblue2", "se_f" = "violetred1"),
+                    labels = c("se_m" = "Males", "se_f" = "Females")) +
+  scale_y_continuous(labels = label_percent(scale = 1),
+                     limits = c(0, 100)) +
+  labs(x = "",
+       y = "",
+       title = "The Percentage of Adults With Secondary Education (1990-2023)",
+       fill = "") +
+  theme_classic() +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+        plot.title = element_text(size = 14),
+        legend.position = c(0.1, 0.9)) +
+  guides(fill = guide_legend(reverse = TRUE))
+```
+
+Again, TODO: observations.
+
+```{r echo=FALSE}
+# Putting the yearly gaps in a table
+data %>%
+  filter(indicatorCode %in% c("se_f", "se_m"), is.na(continent)) %>%
+  group_by(year, indicatorCode) %>%
+  summarize(actualValue = mean(actualValue, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = indicatorCode, values_from = actualValue, values_fill = 0) %>%
+  mutate(gender_gap = round(se_m - se_f, 1)) %>%
+  filter(year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2020, 2023)) %>%
+  select(year, gender_gap) %>%
+  pivot_wider(names_from = year, values_from = gender_gap) %>%
+  gt()
+```
+
+TODO: Economically!!
+
+TODO: a scatterplot of education against GNI...
+
+TODO: get the correlation coefficient (Pearson r value) between education and GNI
+
+TODO: mention that social and geo are closely intertwined...
+
+### Geographic disparities
+
+Below is a graph of each continent's average amount of education of its population who are over 25 years old.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, fig.width=9, fig.height=5}
+# ____________________________________________________
+data %>%
+  filter(indicatorCode == "mys",
+         !is.na(continent)) %>%
+  group_by(continent, year) %>%
+  summarise(mean_mys = mean(actualValue, na.rm = TRUE)) %>%
+  ggplot(aes(x = year, y = mean_mys, colour = continent)) +
+  scale_y_continuous(labels = ~ paste(.x, "Years")) +
+  geom_line(linewidth = 1) +
+  labs(x = "",
+       y = "",
+       title = "The Average Amount of Education That Adults Have by Continent (1990-2023)",
+       colour = "") +
+  theme_classic() +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+        plot.title = element_text(size = 14))
+# TODO: a footnote about "people over 25"
+```
+
+TODO: quantify the gaps in a table
+
+```{r include=FALSE}
+# Getting country boundaries
+world <- ne_countries(scale = "small", returnclass = "sf")
+
+# Assigning standardized continent names
+world <- world %>%
+  mutate(continent = countrycode(iso_a3, origin = "iso3c", destination = "continent"),
+         region = countrycode(iso_a3, origin = "iso3c", destination = "region"),
+         continent = case_when(continent == "Americas" & region %in%
+                            c("Northern America", "Central America", "Caribbean") ~ "North America",
+                          continent == "Americas" & region == "South America" ~ "South America",
+                          TRUE ~ continent)) %>%
+  filter(continent != "Antarctica")
+
+# Preparing the data
+new_data <- data %>%
+  mutate(continent = countrycode(countryIsoCode, origin = "iso3c",
+                                 destination = "continent"),
+    region = countrycode(countryIsoCode, origin = "iso3c", destination = "region"),
+    continent = case_when(continent == "Americas" & region %in%
+                            c("Northern America", "Central America", "Caribbean") ~ "North America",
+                          continent == "Americas" & region == "South America" ~ "South America",
+                          TRUE ~ continent))
+
+# Aggregating indicator data
+continent_data <- new_data %>%
+  filter(indicatorCode == "mys", !is.na(continent)) %>%
+  group_by(continent) %>%
+  summarize(actualValue = mean(actualValue, na.rm = TRUE),
+            .groups = "drop")
+
+# Joining continent values to individual country geometries
+map_dataset <- world %>%
+  left_join(continent_data, by = "continent")
+
+# Creating the map
+ggplot(map_dataset) +
+  geom_sf(aes(fill = actualValue), color = "white", linewidth = 0.1) +
+  scale_fill_gradient(name = "Average Years of Education of Adults", low = "lightblue", high = "darkblue") +
+  labs(title = "Value Distribution by Continent (2023)",
+       subtitle = "SUBTITLE") +
+  theme_classic() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(face = "bold", size = 14),
+        legend.position = "bottom")
+```
+
+Below are the top 10 countries in 2023, again in terms of the average time spent in education of the portion of its population who are over 25.
+
+```{r warning=FALSE, message=FALSE}
+# ____________________________________________________
+data %>%
+  filter(year == 2023, indicatorCode == "mys") %>%
+  arrange(desc(actualValue)) %>%
+  select(country, actualValue) %>%
+  head(n = 10) %>%
+  gt() %>%
+  fmt_number(decimals = 1) %>%
+  cols_align("center") %>%
+  cols_label(country = "Country", actualValue = "Mean Years of Education") %>%
+  tab_header(title = "Most Educated Countries (2023)") %>%
+  tab_options(column_labels.background.color = "#F9E076")
+```
+
+And here are the bottom 10. There's more than a decade's difference...
+
+```{r warning=FALSE, message=FALSE}
+# ____________________________________________________
+data %>%
+  filter(year == 2023, indicatorCode == "mys") %>%
+  arrange(actualValue) %>%
+  select(country, actualValue) %>%
+  head(n = 10) %>%
+  gt() %>%
+  fmt_number(decimals = 1) %>%
+  cols_align("center") %>%
+  cols_label(country = "Country", actualValue = "Mean Years of Education") %>%
+  tab_header(title = "Least Educated Countries (2023)") %>%
+  tab_options(column_labels.background.color = "lightsteelblue2")
+```
+
+Next, here is a table showing the countries that have been in the top 10 at least once, and the number of times it has been in the top 10. TODO: commentary
+
+```{r echo=FALSE}
+# ____________________________________________________
+data %>%
+  filter(indicatorCode == "mys") %>%
+  group_by(year) %>%
+  # Ranking countries by the metric in ascending order
+  mutate(rank = rank(actualValue, ties.method = "min")) %>%
+  # Keeping only the top 10 for each year
+  filter(rank >= 10) %>%
+  ungroup() %>%
+  # Counting how many times each country appeared in the bottom 10 across all years
+  count(country, name = "times_in_top_10") %>%
+  arrange(desc(times_in_top_10)) %>%
+  # Styling the table
+  gt() %>%
+  cols_align("center") %>%
+  cols_label(country = "Country", times_in_top_10 = "# of Times in Top 10") %>%
+  tab_header(title = "Countries With Consistently High Education Rates") %>%
+  tab_options(column_labels.background.color = "#F9E076")
+```
+
+Next, here is a table showing the countries that have been in the bottom 10 at least once, and the number of times it has been in the bottom 10. There are 17 countries that have been in the bottom 10 at least once, of which 4 countries (Afghanistan, Guinea, Mali, Niger) have ranked in the bottom 10 in every year from 1990 to 2023.
+
+```{r echo=FALSE}
+# ____________________________________________________
+data %>%
+  filter(indicatorCode == "mys") %>%
+  group_by(year) %>%
+  # Ranking countries by the metric in ascending order
+  mutate(rank = rank(actualValue, ties.method = "min")) %>%
+  # Keeping only the bottom 10 for each year
+  filter(rank <= 10) %>%
+  ungroup() %>%
+  # Counting how many times each country appeared in the bottom 10 across all years
+  count(country, name = "times_in_bottom_10") %>%
+  arrange(desc(times_in_bottom_10)) %>%
+  # Styling the table
+  gt() %>%
+  cols_align("center") %>%
+  cols_label(country = "Country", times_in_bottom_10 = "# of Times in Bottom 10") %>%
+  tab_header(title = "Countries With Consistently Low Education Rates") %>%
+  tab_options(column_labels.background.color = "lightsteelblue2")
+```
+
+TODO: add more columns
+
+TODO: get the most improved... least improved (regressed??) countries...
+
+TODO: calculate the differences between high and low-ly educated countries...
+
+### Conclusion
+
+TODO: to close the gaps between socioeconomic levels and geographic separations/divides...
+
+TODO: mention how the average years of education isn't a foolproof metric...
+
+Just to conclude on a positive note, the world's education level has been steadily increasing for the past 3 decades from ~5.85 years in 1990 to ~8.78 years in 2023 (a change of more than 3 years!), which is nice to see. In fact, it has increased every single year, and by TODO: ~X.XX years each year. This means that the world is getting more educated as a whole, and this upward trajectory will hopefully last well into the future.
