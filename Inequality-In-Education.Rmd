@@ -43,11 +43,13 @@ data <- read_excel("hdr-data.xlsx") %>%
          # NRO is for Naoero, a country in Oceania
          # ZZK.WORLD means the global value
          continent = ifelse(countryIsoCode == "NRO", "Oceania", continent))
+
+# TODO: check for missing values
 ```
 
 ### Viewing the global level of education over time
 
-In this initial plot of the average global amount of education in years, it's clear that the world is gradually becoming more educated.
+In this initial plot of the average amount of education worldwide in years, it's clear that the world is gradually becoming more educated as a whole.
 
 ```{r echo=FALSE, fig.width=7, fig.height=5}
 # Graphing the global education mean over time
@@ -78,7 +80,7 @@ mys_2023 <- data %>%
 
 The world's education level in general has been steadily growing for the past 3 decades from ~`r round(mys_1990, 1)` years in 1990 to ~`r round(mys_1990, 1)` years in 2023 (a change of ~`r round(mys_2023 - mys_1990, 1)` years!), which is really nice to see. In fact, it has increased every single year, by ~`r round((mys_2023 - mys_1990) / (2023 - 1990), 1)` years each year.
 
-However, if we look into how the level of education varies demographically (specifically, between genders and economic classes) and geographically, some disparities emerge.
+However, if we look into how the level of education varies demographically and geographically, some disparities emerge.
 
 ### Exploring differences by gender
 
@@ -178,7 +180,7 @@ data %>%
   tab_options(column_labels.background.color = "grey95")
 ```
 
-TODO: transition
+TODO: a transition
 
 ### Exploring differences by location
 
@@ -203,13 +205,13 @@ data %>%
         plot.title = element_text(size = 14))
 ```
 
-TODO: add a transition sentence about focusing on 2023
+TODO: add a transition sentence about focusing on 2023 here on out
 
-TODO: explain HDI; mention that social and geo are closely related / geo influences social; add a transition sentence about the HDI breakdown; In addition, using Gross National Income (GNI) per capita as an indicator of a country's level of economic development...
+TODO: explain HDI; mention that social and geo are closely related / geo influences social; add a transition sentence about the HDI breakdown... In addition, using Gross National Income (GNI) per capita as an indicator of a country's level of economic development...
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=9, fig.height=5}
 # Plotting a scatterplot of education against HDI rank
-# TODO: get actual HDI value??
+# TODO: get actual HDI value
 data %>%
   filter(year == 2023,
          indicatorCode %in% c("gnipc", "hdi_rank", "mys", "ineq_edu"),
@@ -228,16 +230,17 @@ data %>%
 # TODO: maybe a linear regression model to get coefficients
 ```
 
-Here are the top 10 countries in 2023, again in terms of the average time spent in education of the portion of its population who are over 25.
+TODO: mention the clusters and elaborate more
+
+Here are the top 5 countries in 2023, again in terms of the average time spent in education of the portion of its population who are over 25.
 
 ```{r warning=FALSE, message=FALSE}
 # Making a table of the most educated countries in 2023
-# TODO: add change columns too?
 data %>%
   filter(year == 2023, indicatorCode == "mys") %>%
   arrange(desc(actualValue)) %>%
   select(country, actualValue) %>%
-  head(n = 10) %>%
+  head(n = 5) %>%
   gt() %>%
   fmt_number(decimals = 1) %>%
   cols_align("center") %>%
@@ -248,22 +251,22 @@ data %>%
   tab_options(column_labels.background.color = "#F9E076")
 ```
 
-And here are the bottom 10.
-
-TODO: There's more than a decade's difference between the highest/lowest countries...
+And here are the bottom 20. I'm including more rows in this table because the lower end of the range is more telling/revealing than the upper end.
 
 ```{r warning=FALSE, message=FALSE}
 # Making a table of the least educated countries in 2023
-# TODO: add change columns too?
 data %>%
   filter(year == 2023, indicatorCode == "mys") %>%
   arrange(actualValue) %>%
   select(country, actualValue) %>%
-  head(n = 10) %>%
+  head(n = 20) %>%
+  mutate(difference_from_world = actualValue - mys_2023) %>%
   gt() %>%
   fmt_number(decimals = 1) %>%
   cols_align("center") %>%
-  cols_label(country = "Country", actualValue = "Mean Years of Education") %>%
+  cols_label(country = "Country",
+             actualValue = "Mean Years of Education",
+             difference_from_world = "Distance From the World Average") %>%
   tab_header(title = "Least Educated Countries (2023)") %>%
   tab_style(style = cell_text(size = px(18)),
             locations = cells_title(groups = "title")) %>%
@@ -274,7 +277,6 @@ As for the countries that have been in the top 10 at least once for every year i
 
 ```{r include=FALSE}
 # Making a table of the most educated countries (1990-2023)
-# TODO: get a list of the most consistently educated countries?
 data %>%
   filter(indicatorCode == "mys") %>%
   group_by(year) %>%
@@ -335,6 +337,8 @@ data %>%
             locations = cells_title(groups = "title")) %>%
   tab_options(column_labels.background.color = "lightsteelblue2")
 ```
+
+TODO: bullet points?
 
 TODO: There are no decreases...
 
